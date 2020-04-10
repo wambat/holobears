@@ -12,8 +12,10 @@
 #define ON_DUTY_RATIO 8 
 #define IR_DEBOUNCE_COUNT 1000
 #define IR_MAX_COUNT 65534 
-#define BASE_CYCLE 180 //180 is 24 HZ
-#define CYCLE_DIVIDER 10
+#define BASE_CYCLE 60
+//#define PRESCALER _BV(CS02) //256
+#define PRESCALER (_BV(CS02) | _BV(CS00)) //1024
+#define CYCLE_DIVIDER 23
 
 unsigned char cycle=BASE_CYCLE;
 unsigned char ir_on=0;
@@ -43,7 +45,7 @@ void init_timer(void)
 {
         TCCR0A |= _BV(WGM01); // set timer counter mode to CTC
         //TCCR0B |= _BV(CS02)|_BV(CS00);
-        TCCR0B |= _BV(CS02); // set prescaler to 1024 (CLK=1200000Hz/1024/256=4.57Hz, 0.22s)
+        TCCR0B |= PRESCALER; // set prescaler to 1024 (CLK=1200000Hz/1024/256=4.57Hz, 0.22s)
         OCR0A = cycle; // set Timer's counter max value
         TIMSK0 |= _BV(OCIE0A); // enable Timer CTC interrupt
         sei(); // enable global interrupts

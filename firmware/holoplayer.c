@@ -1,5 +1,5 @@
 #include <avr/io.h>
-#include <avr/interrupt.h>
+//#include <avr/interrupt.h>
 
 #ifndef F_CPU
 #define F_CPU 8000000UL
@@ -9,75 +9,55 @@
 #define LED_PIN PB3
 #define DEBUG_PIN PB0
 #define SENSOR_PIN PB4
-#define ON_DUTY_RATIO 8 
-#define IR_DEBOUNCE_COUNT 1000
+#define ON_DUTY_CYCLES 4 
+#define IR_DEBOUNCE_COUNT 10
 #define IR_MAX_COUNT 65534 
-#define BASE_CYCLE 60
-//#define PRESCALER _BV(CS02) //256
-#define PRESCALER (_BV(CS02) | _BV(CS00)) //1024
-#define CYCLE_DIVIDER 23
-
-unsigned char cycle=BASE_CYCLE;
+#define MAX_COUNT 65534 
+#define FRAMES_PER_EVENT 6
+//NORMALLY NOT NEEDED
+#define FRAMES_PER_EVENT_FIX 2
 unsigned char ir_on=0;
-//unsigned long long time_since_last_ir=0;
-unsigned long long time_since_last_ir_cnt=0;
-/*
-void delay_ms(uint8_t ms) {
-  uint16_t delay_count = F_CPU / 17500;
-  volatile uint16_t i;
-
-  while (ms != 0) {
-    for (i=0; i != delay_count; i++);
-    ms--;
-  }
-}
-*/
-ISR(TIM0_COMPA_vect)
-{
-        if(PORTB & _BV(LED_PIN))
-	   OCR0A=cycle-ON_DUTY_RATIO*cycle/100;
-        else
-	   OCR0A=ON_DUTY_RATIO*cycle/100;
-        PORTB ^= _BV(LED_PIN); // toggle LED pin
-}
-
-void init_timer(void)
-{
-        TCCR0A |= _BV(WGM01); // set timer counter mode to CTC
-        //TCCR0B |= _BV(CS02)|_BV(CS00);
-        TCCR0B |= PRESCALER; // set prescaler to 1024 (CLK=1200000Hz/1024/256=4.57Hz, 0.22s)
-        OCR0A = cycle; // set Timer's counter max value
-        TIMSK0 |= _BV(OCIE0A); // enable Timer CTC interrupt
-        sei(); // enable global interrupts
-}
-void init_io(void)
+unsigned int pulse_front=3000;
+unsigned int counter=0;
+unsigned int debounce_counter=0;
+unsigned int ir_pulse_counter=0;
+void init(void)
 {
         DDRB |= (1<<LED_PIN)|(1<<DEBUG_PIN); // set LED pin as OUTPUT
         DDRB &=~(1<<SENSOR_PIN) ;
         PORTB |=(1<<SENSOR_PIN) ; //Pull-up
         PORTB &=~(1<<LED_PIN) ;
 }
-void init(void)
+
+void turn_lights(char on)
 {
-	init_io();
-	init_timer();
+	if(on)
+		PORTB |= (1<<LED_PIN);
+	else
+		PORTB &= ~(1<<LED_PIN);
 }
 
-void on_ir_front(long long time_since_last_ir)
+void on_ir_fall(unsigned int t)
 {
-	cycle= (unsigned char) (time_since_last_ir / CYCLE_DIVIDER);
+	pulse_front=(t / FRAMES_PER_EVENT) + FRAMES_PER_EVENT_FIX;
 }
 
 void switch_ir(char s)
 {
 	if((ir_on != s) )
-		if(time_since_last_ir_cnt>IR_DEBOUNCE_COUNT)
+	{
+		debounce_counter++;
+		if(debounce_counter>IR_DEBOUNCE_COUNT)
 		{
-			ir_on=!ir_on;
-			if(ir_on)
-				on_ir_front(time_since_last_ir_cnt);
-			time_since_last_ir_cnt=0;
+			debounce_counter=0;
+			ir_on=s;
+			if(!ir_on)
+			{
+				on_ir_fall(ir_pulse_counter);
+				ir_pulse_counter=0;
+			}
 		}
+	}
 }
 
 int main(void)
@@ -85,14 +65,21 @@ int main(void)
 	init();
         while (1)
 	{
-		time_since_last_ir_cnt++;
+		counter++;
+		ir_pulse_counter++;
+		//time_since_last_ir_cnt++;
 		switch_ir(PINB & _BV(SENSOR_PIN));
-		/*
+		if(counter % (pulse_front-ON_DUTY_CYCLES) == 0)
+			turn_lights(1);
+		if(counter % pulse_front == 0)
+		{
+			counter=0;
+			turn_lights(0);
+		}
 		if(ir_on)
 			PORTB |= (1<<DEBUG_PIN);
 		else
 			PORTB &= ~(1<<DEBUG_PIN);
-		*/
 
 		
 		/*
@@ -101,5 +88,7 @@ int main(void)
 		PORTB &= ~(1<<DEBUG_PIN);
 		delay_ms(250);
 		*/
+		if(counter >= MAX_COUNT)
+			counter=0;
 	};
 }
